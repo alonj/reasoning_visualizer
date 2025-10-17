@@ -1,4 +1,4 @@
-"""Streamlit app to explore deep research tool traces from uploaded CSV files."""
+"""Streamlit app to explore deep research tool traces from uploaded JSON files."""
 
 from __future__ import annotations
 
@@ -6,14 +6,16 @@ import ast
 import hashlib
 import io
 from pathlib import Path
+import re
 from typing import Any
+import json
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 
-DEFAULT_TRACE_PATH = Path(__file__).with_name("oai_response.csv")
+DEFAULT_TRACE_PATH = Path(__file__).with_name("monaco_0005.json")
 
 
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -32,18 +34,19 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_trace_from_bytes(raw_bytes: bytes) -> pd.DataFrame:
-	"""Load and prepare a trace from in-memory CSV bytes."""
+	"""Load and prepare a trace from in-memory JSON bytes."""
 	buffer = io.BytesIO(raw_bytes)
-	df = pd.read_csv(buffer)
-	return prepare_dataframe(df)
-
+	data = json.load(buffer)
+	df = pd.json_normalize(data['response']['output'], meta_prefix='_', record_prefix='_', sep='_')
+	return prepare_dataframe(df), data.get('prompt', 'Prompt not found.')
 
 @st.cache_data(show_spinner=False)
 def load_trace_from_path(path_str: str) -> pd.DataFrame:
 	"""Load and prepare a trace from a file path."""
-	df = pd.read_csv(path_str)
-	return prepare_dataframe(df)
-
+	with open(path_str, "rb") as f:
+		data = json.load(f)
+	df = pd.json_normalize(data['response']['output'], meta_prefix='_', record_prefix='_', sep='_')
+	return prepare_dataframe(df), data.get('prompt', 'Prompt not found.')
 
 def parse_literal(value: str | float | int | None):
 	if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -62,20 +65,27 @@ def render_step(row) -> None:
 	record = row.fillna("")
 	status = str(record.get("status", "")).strip() or "unknown"
 	role = str(record.get("role", "")).strip() or "n/a"
+	summary = record.get("summary", "")
+	raw_type = str(record.get("type", "unknown")).strip().lower()
+	safe_type = re.sub(r'[^a-z0-9_-]+', '-', raw_type)
+	if isinstance(summary, str):
+		summary = [{"text": summary}]
+	summary = "\n".join(line['text'].strip() for line in summary)
 	st.markdown(
 		f"""
 		<div class="step-card">
 			<div class="step-header">
 				<span class="step-index">#{int(record.get('sequence', 0))}</span>
-				<span class="step-type">{record.get('type', 'unknown')}</span>
+				<span class="step-type {safe_type}" data-type="{raw_type}">{record.get('type', 'unknown')}</span>
 				<span class="step-status {status}">{status}</span>
 			</div>
 			<div class="step-meta">
 				<div><strong>Role:</strong> {role}</div>
 				<div><strong>Action:</strong> {record.get('action_type', '') or '—'}</div>
 				<div><strong>Target:</strong> {record.get('action_url', '') or record.get('action_query', '') or '—'}</div>
+				{"<div>(No summary available)</div>" if summary == "" else "<div></div>"}
 			</div>
-			<div class="step-summary">{record.get('summary', '') or 'No summary available.'}</div>
+			<div class="step-summary">{summary}</div>
 		</div>
 		""",
 		unsafe_allow_html=True,
@@ -90,10 +100,16 @@ def render_step(row) -> None:
 	content = record.get("content")
 	if content:
 		st.markdown("**Message Content**")
-		st.write(content)
+		if not isinstance(content, list):
+			content = [content]
+		for c in content:
+			if 'text' in c:
+				st.markdown(c['text'])
+			c_no_text = {k: v for k, v in c.items() if k != 'text'}
+			st.write(c_no_text)
 
 
-def render_trace(df: pd.DataFrame, dataset_key: str, label: str) -> None:
+def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) -> None:
 	close_col, _ = st.columns([1, 5])
 	with close_col:
 		if st.button("Close tab", key=f"{dataset_key}-close"):
@@ -162,7 +178,7 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str) -> None:
 		return
 
 	chart = (
-		alt.Chart(filtered)
+		alt.Chart(filtered.drop(columns=["summary"]))
 		.mark_circle(size=200)
 		.encode(
 			x=alt.X("sequence:Q", title="Sequence"),
@@ -181,6 +197,9 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str) -> None:
 		.interactive()
 	)
 	st.altair_chart(chart, use_container_width=True)
+
+	st.markdown("### Prompt")
+	st.markdown(f"#### {prompt}")
 
 	st.markdown("### Trace Details")
 	for _, row in filtered.iterrows():
@@ -220,6 +239,12 @@ def main() -> None:
 				text-transform: uppercase;
 				letter-spacing: 0.04em;
 			}
+			.step-type{ /* default style */ }
+			.step-type[data-type="reasoning"] { background: rgba(92, 225, 166, 0.18); }
+            .step-type[data-type="message"] { background: rgba(241, 139, 139, 0.18); }
+			.step-type[data-type="web_search_call"] { background: rgba(138, 180, 255, 0.18); }
+			.step-type[data-type="code_interpreter_call"] { background: rgba(255, 203, 79, 0.18); }
+
 			.step-status {
 				margin-left: auto;
 				font-size: 0.8rem;
@@ -241,6 +266,23 @@ def main() -> None:
 				font-size: 1rem;
 				line-height: 1.55;
 			}
+			.stTabs [data-baseweb="tab-list"] {
+				gap: 6px;
+			}
+			.stTabs [data-baseweb="tab"] {
+				height: 50px;
+				white-space: pre-wrap;
+				background-color: #FFFFFF;
+				border-radius: 4px 4px 0px 0px;
+				gap: 1px;
+				padding-top: 10px;
+				padding-bottom: 10px;
+				font-weight: 600;
+			}
+			.stTabs [aria-selected="true"] {
+				background-color: #F0F2F6;
+			}
+
 		</style>
 		""",
 		unsafe_allow_html=True,
@@ -256,8 +298,8 @@ def main() -> None:
 
 	with st.sidebar:
 		uploaded_files = st.file_uploader(
-			"Upload trace CSVs",
-			type=["csv"],
+			"Upload trace JSONs",
+			type=["json"],
 			accept_multiple_files=True,
 		)
 
@@ -266,23 +308,27 @@ def main() -> None:
 			trace_hash = hashlib.md5(content).hexdigest()
 			trace_id = f"upload-{trace_hash}"
 			if trace_id not in trace_store:
+				df, prompt = load_trace_from_bytes(content)
 				trace_store[trace_id] = {
 					"name": uploaded.name,
-					"df": load_trace_from_bytes(content),
+					"df": df,
+					"prompt": prompt,
 				}
 
 		if DEFAULT_TRACE_PATH.exists():
 			if st.button("Load sample trace", key="load-sample"):
 				trace_id = f"sample-{DEFAULT_TRACE_PATH.name}"
+				df, prompt = load_trace_from_path(str(DEFAULT_TRACE_PATH))
 				if trace_id not in trace_store:
 					trace_store[trace_id] = {
 						"name": f"Sample · {DEFAULT_TRACE_PATH.name}",
-						"df": load_trace_from_path(str(DEFAULT_TRACE_PATH)),
+						"df": df,
+						"prompt": prompt,
 					}
 				st.rerun()
 
 	if not trace_store:
-		st.info("Upload a CSV trace to get started.")
+		st.info("Upload a JSON trace to get started.")
 		return
 
 	tab_labels = [entry["name"] for entry in trace_store.values()]
@@ -290,7 +336,7 @@ def main() -> None:
 
 	for (trace_id, entry), tab in zip(trace_store.items(), tabs):
 		with tab:
-			render_trace(entry["df"], trace_id, entry["name"])
+			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"])
 
 
 if __name__ == "__main__":
