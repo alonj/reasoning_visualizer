@@ -64,10 +64,12 @@ def parse_literal(value: str | float | int | None):
 def render_step(row) -> None:
 	record = row.fillna("")
 	status = str(record.get("status", "")).strip() or "unknown"
-	role = str(record.get("role", "")).strip() or "n/a"
+	role = str(record.get("role", "")).strip() or ""
 	summary = record.get("summary", "")
 	raw_type = str(record.get("type", "unknown")).strip().lower()
 	safe_type = re.sub(r'[^a-z0-9_-]+', '-', raw_type)
+	action = record.get("action_type", "")
+	target = record.get("action_url", "") or record.get("action_query", "")
 	if isinstance(summary, str):
 		summary = [{"text": summary}]
 	summary = "\n".join(line['text'].strip() for line in summary)
@@ -77,14 +79,11 @@ def render_step(row) -> None:
 			<div class="step-header">
 				<span class="step-index">#{int(record.get('sequence', 0))}</span>
 				<span class="step-type {safe_type}" data-type="{raw_type}">{record.get('type', 'unknown')}</span>
+				<div>{'<strong>Action: </strong>' + action if action else ''} {('<strong> ⟶ </strong> ' + target) if target else ''}
+				{"(No summary available)" if summary == "" else ""} </div>
 				<span class="step-status {status}">{status}</span>
 			</div>
-			<div class="step-meta">
-				<div><strong>Role:</strong> {role}</div>
-				<div><strong>Action:</strong> {record.get('action_type', '') or '—'}</div>
-				<div><strong>Target:</strong> {record.get('action_url', '') or record.get('action_query', '') or '—'}</div>
-				{"<div>(No summary available)</div>" if summary == "" else "<div></div>"}
-			</div>
+			{f'<div class="step-meta"><div><strong>Role:</strong>{role}</div></div>' if role else '<div class="step-meta"></div>'}
 			<div class="step-summary">{summary}</div>
 		</div>
 		""",
