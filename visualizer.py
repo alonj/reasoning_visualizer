@@ -73,7 +73,8 @@ def render_step(row) -> None:
 	target = record.get("action_url", "") or query
 	target = "<a href='" + target + "' target='_blank'>" + target + "</a>" if target.startswith("http") else target
 	google_search_link = f"https://www.google.com/search?q={query.replace(' ', '+')}" if query else ""
-	google_search_link = f"<a href='{google_search_link}' target='_blank'>🔍Google</a>" if google_search_link else ""
+	bing_search_link = f"https://www.bing.com/search?form=&q={query.replace(' ', '+')}" if query else ""
+	search_link = f"🔍 <a href='{google_search_link}' target='_blank'>Google</a> | <a href='{bing_search_link}' target='_blank'>Bing</a>" if query else ""
 	pattern = record.get("action_pattern", "")
 	if isinstance(summary, str):
 		summary = [{"text": summary}]
@@ -85,7 +86,7 @@ def render_step(row) -> None:
 				<span class="step-index">#{int(record.get('sequence', 0))}</span>
 				<span class="step-type {safe_type}" data-type="{raw_type}">{record.get('type', 'unknown')}</span>
 				<div>{'<strong>Action: </strong>' + action if action else ''} {('<strong> ⟶ </strong> ' + (f'"{pattern}" | ' if pattern else '') + target) if target else ''}
-				{"(No summary available)" if summary == "" else ""} {google_search_link}</div>
+				{"(No summary available)" if summary == "" else ""} {search_link}</div>
 				<span class="step-status {status}">{status}</span>
 			</div>
 			{f'<div class="step-meta"><div><strong>Role:</strong>{role}</div></div>' if role else '<div class="step-meta"></div>'}
