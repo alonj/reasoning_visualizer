@@ -69,8 +69,11 @@ def render_step(row) -> None:
 	raw_type = str(record.get("type", "unknown")).strip().lower()
 	safe_type = re.sub(r'[^a-z0-9_-]+', '-', raw_type)
 	action = record.get("action_type", "")
-	target = record.get("action_url", "") or record.get("action_query", "")
+	query = record.get("action_query", "")
+	target = record.get("action_url", "") or query
 	target = "<a href='" + target + "' target='_blank'>" + target + "</a>" if target.startswith("http") else target
+	google_search_link = f"https://www.google.com/search?q={query.replace(' ', '+')}" if query else ""
+	google_search_link = f"<a href='{google_search_link}' target='_blank'>🔍Google</a>" if google_search_link else ""
 	pattern = record.get("action_pattern", "")
 	if isinstance(summary, str):
 		summary = [{"text": summary}]
@@ -82,7 +85,7 @@ def render_step(row) -> None:
 				<span class="step-index">#{int(record.get('sequence', 0))}</span>
 				<span class="step-type {safe_type}" data-type="{raw_type}">{record.get('type', 'unknown')}</span>
 				<div>{'<strong>Action: </strong>' + action if action else ''} {('<strong> ⟶ </strong> ' + (f'"{pattern}" | ' if pattern else '') + target) if target else ''}
-				{"(No summary available)" if summary == "" else ""} </div>
+				{"(No summary available)" if summary == "" else ""} {google_search_link}</div>
 				<span class="step-status {status}">{status}</span>
 			</div>
 			{f'<div class="step-meta"><div><strong>Role:</strong>{role}</div></div>' if role else '<div class="step-meta"></div>'}
