@@ -70,6 +70,8 @@ def render_step(row) -> None:
 	safe_type = re.sub(r'[^a-z0-9_-]+', '-', raw_type)
 	action = record.get("action_type", "")
 	target = record.get("action_url", "") or record.get("action_query", "")
+	target = "<a href='" + target + "' target='_blank'>" + target + "</a>" if target.startswith("http") else target
+	pattern = record.get("action_pattern", "")
 	if isinstance(summary, str):
 		summary = [{"text": summary}]
 	summary = "\n".join(line['text'].strip() for line in summary)
@@ -79,7 +81,7 @@ def render_step(row) -> None:
 			<div class="step-header">
 				<span class="step-index">#{int(record.get('sequence', 0))}</span>
 				<span class="step-type {safe_type}" data-type="{raw_type}">{record.get('type', 'unknown')}</span>
-				<div>{'<strong>Action: </strong>' + action if action else ''} {('<strong> ⟶ </strong> ' + target) if target else ''}
+				<div>{'<strong>Action: </strong>' + action if action else ''} {('<strong> ⟶ </strong> ' + (f'"{pattern}" | ' if pattern else '') + target) if target else ''}
 				{"(No summary available)" if summary == "" else ""} </div>
 				<span class="step-status {status}">{status}</span>
 			</div>
