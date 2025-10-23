@@ -13,11 +13,23 @@ import json
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.components.v1 import html
 
 
 DEFAULT_TRACE_PATH = Path(__file__).with_name("monaco_0005.json")
 
-
+def switch_tab(tab_index):
+    js_code = f"""
+    <script>
+    var tabGroup = window.parent.document.getElementsByClassName("stTabs")[0];
+    var tabButtons = tabGroup.getElementsByTagName("button");
+    if (tabButtons.length > {tab_index}) {{
+        tabButtons[{tab_index}].click();
+    }}
+    </script>
+    """
+    html(js_code, height=0, width=0)
+	
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 	"""Normalize column names and add helper columns."""
 	df = df.copy()
@@ -217,7 +229,7 @@ def main() -> None:
 		"""
 		<style>
 			.step-card {
-				background: linear-gradient(135deg, #10131a, #1e2533);
+				background: linear-gradient(135deg, #273143, #3a4963);
 				border-radius: 16px;
 				padding: 1.2rem;
 				box-shadow: 0 12px 30px rgba(9, 12, 20, 0.35);
@@ -287,12 +299,15 @@ def main() -> None:
 			.stTabs [aria-selected="true"] {
 				background-color: #F0F2F6;
 			}
+			a:link {
+				color: #b1bdd1;
+			}
 
 		</style>
 		""",
 		unsafe_allow_html=True,
 	)
-
+	st.session_state["latest_upload_tab_idx"] = st.session_state.get("latest_upload_tab_idx", 0)
 	st.title("Deep Research Reasoning Trace")
 	st.caption("Upload one or more deep research traces to inspect them side-by-side.")
 
@@ -300,7 +315,6 @@ def main() -> None:
 		st.session_state["trace_store"] = {}
 
 	trace_store: dict[str, dict[str, Any]] = st.session_state["trace_store"]
-
 	with st.sidebar:
 		uploaded_files = st.file_uploader(
 			"Upload trace JSONs",
@@ -319,7 +333,8 @@ def main() -> None:
 					"df": df,
 					"prompt": prompt,
 				}
-
+		latest_upload_tab_idx = len(trace_store) - 1 - len(uploaded_files) if uploaded_files else st.session_state.get("latest_upload_tab_idx", 0)
+		st.session_state["latest_upload_tab_idx"] = latest_upload_tab_idx
 		if DEFAULT_TRACE_PATH.exists():
 			if st.button("Load sample trace", key="load-sample"):
 				trace_id = f"sample-{DEFAULT_TRACE_PATH.name}"
@@ -342,6 +357,10 @@ def main() -> None:
 	for (trace_id, entry), tab in zip(trace_store.items(), tabs):
 		with tab:
 			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"])
+	# when new files are uploaded, set active tab to latest upload
+	if uploaded_files:
+		st.session_state.active_tab = st.session_state["latest_upload_tab_idx"]
+		switch_tab(st.session_state.active_tab)
 
 
 if __name__ == "__main__":
