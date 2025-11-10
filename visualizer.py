@@ -126,20 +126,21 @@ def render_step(row) -> None:
 			st.write(c_no_text)
 
 
-def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) -> None:
-	close_col, _ = st.columns([1, 5])
-	with close_col:
-		if st.button("Close tab", key=f"{dataset_key}-close"):
-			st.session_state.get("trace_store", {}).pop(dataset_key, None)
-			st.rerun()
+def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str, key_prefix: str = "", show_close_button: bool = True) -> None:
+	if show_close_button:
+		close_col, _ = st.columns([1, 5])
+		with close_col:
+			if st.button("Close tab", key=f"{key_prefix}{dataset_key}-close"):
+				st.session_state.get("trace_store", {}).pop(dataset_key, None)
+				st.rerun()
 
-	with st.expander("Filters", expanded=True):
+	with st.expander("Filters", expanded=False):
 		type_options = sorted([opt for opt in df.get("type", pd.Series(dtype=str)).dropna().unique() if opt])
 		selected_types = st.multiselect(
 			"Step type",
 			type_options,
 			default=type_options,
-			key=f"{dataset_key}-type",
+			key=f"{key_prefix}{dataset_key}-type",
 		)
 
 		action_options = sorted([opt for opt in df.get("action_type", pd.Series(dtype=str)).dropna().unique() if opt])
@@ -147,7 +148,7 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) ->
 			"Action type",
 			action_options,
 			default=action_options,
-			key=f"{dataset_key}-action",
+			key=f"{key_prefix}{dataset_key}-action",
 		)
 
 		status_options = sorted(df.get("status", pd.Series(dtype=str)).fillna("unknown").unique())
@@ -155,10 +156,9 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) ->
 			"Status",
 			status_options,
 			default=status_options,
-			key=f"{dataset_key}-status",
+			key=f"{key_prefix}{dataset_key}-status",
 		)
-
-		search_term = st.text_input("Search text", key=f"{dataset_key}-search")
+		search_term = st.text_input("Search text", key=f"{key_prefix}{dataset_key}-search")
 
 	filtered = df.copy()
 	if selected_types:
@@ -182,7 +182,7 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) ->
 		"Download filtered CSV",
 		filtered.to_csv(index=False),
 		file_name=f"{label.replace(' ', '_').lower()}_filtered.csv",
-		key=f"{dataset_key}-download",
+		key=f"{key_prefix}{dataset_key}-download",
 	)
 
 	col_a, col_b, col_c = st.columns(3)
@@ -219,7 +219,20 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str) ->
 	st.markdown(f"#### {prompt}")
 
 	st.markdown("### Trace Details")
-	for _, row in filtered.iterrows():
+	# Toggle: show all steps or only the last step (default = only last)
+	show_all = st.checkbox(
+		"Show all steps",
+		value=False,
+		key=f"{key_prefix}{dataset_key}-show-all",
+		help="When unchecked (default) only the last matching step is displayed; check to show the full filtered trace.",
+	)
+	if show_all:
+		rows_iter = filtered.sort_values("sequence").iterrows()
+	else:
+		# show only the last matching step
+		last_row = filtered.sort_values("sequence").tail(1)
+		rows_iter = last_row.iterrows()
+	for _, row in rows_iter:
 		render_step(row)
 
 
@@ -351,12 +364,60 @@ def main() -> None:
 		st.info("Upload a JSON trace to get started.")
 		return
 
+	trace_items = list(trace_store.items())
+	trace_ids = [trace_id for trace_id, _ in trace_items]
+	if len(trace_items) >= 2:
+		st.subheader("Compare traces")
+		compare_enabled = st.checkbox("Enable side-by-side comparison", key="compare-enabled")
+		if compare_enabled:
+			select_cols = st.columns(2)
+			with select_cols[0]:
+				left_id = st.selectbox(
+					"Left trace",
+					trace_ids,
+					format_func=lambda tid: trace_store[tid]["name"],
+					key="compare-left",
+				)
+			with select_cols[1]:
+				default_index = min(1, len(trace_ids) - 1)
+				right_id = st.selectbox(
+					"Right trace",
+					trace_ids,
+					format_func=lambda tid: trace_store[tid]["name"],
+					key="compare-right",
+					index=default_index,
+				)
+			if left_id == right_id:
+				st.warning("Select two different traces.")
+			else:
+				content_cols = st.columns(2)
+				with content_cols[0]:
+					left_entry = trace_store[left_id]
+					render_trace(
+						left_entry["df"],
+						left_id,
+						left_entry["name"],
+						left_entry["prompt"],
+						key_prefix="compare-left-",
+						show_close_button=False,
+					)
+				with content_cols[1]:
+					right_entry = trace_store[right_id]
+					render_trace(
+						right_entry["df"],
+						right_id,
+						right_entry["name"],
+						right_entry["prompt"],
+						key_prefix="compare-right-",
+						show_close_button=False,
+					)
+
 	tab_labels = [entry["name"] for entry in trace_store.values()]
 	tabs = st.tabs(tab_labels)
 
 	for (trace_id, entry), tab in zip(trace_store.items(), tabs):
 		with tab:
-			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"])
+			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"], key_prefix="tab-")
 	# when new files are uploaded, set active tab to latest upload
 	if uploaded_files:
 		st.session_state.active_tab = st.session_state["latest_upload_tab_idx"]
