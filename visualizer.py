@@ -52,6 +52,12 @@ def handle_loaded_data(data: dict[str, Any]) -> pd.DataFrame:
 		data_keys = list(response_data.keys())
 		response_data = response_data[data_keys[-1]]
 	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
+	if 'action_type' not in df.columns:
+		df['action_type'] = 'content'
+	if 'action_query' not in df.columns:
+		df['action_query'] = None
+	if 'action_url' not in df.columns:
+		df['action_url'] = None
 	return prepare_dataframe(df), prompt_data, answer_data
 
 
@@ -203,27 +209,34 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str, an
 		st.info("No steps match the current filters.")
 		return
 
-	chart = (
-		alt.Chart(filtered.drop(columns=["summary"]))
-		.mark_circle(size=200)
-		.encode(
-			x=alt.X("sequence:Q", title="Sequence"),
-			y=alt.Y("type:N", title="Step type"),
-			color=alt.Color("type:N", legend=None),
-			tooltip=[
-				"sequence",
-				"type",
-				"status",
-				"action_type",
-				"action_query",
-				"action_url",
-			],
+	try:
+		chart = (
+			alt.Chart(filtered.drop(columns=["summary"]))
+			.mark_circle(size=200)
+			.encode(
+				x=alt.X("sequence:Q", title="Sequence"),
+				y=alt.Y("type:N", title="Step type"),
+				color=alt.Color("type:N", legend=None),
+				tooltip=[
+					"sequence",
+					"type",
+					"status",
+					"action_type",
+					"action_query",
+					"action_url",
+				],
+			)
+			.properties(height=320)
+			.interactive()
 		)
-		.properties(height=320)
-		.interactive()
-	)
-	st.altair_chart(chart, use_container_width=True)
-
+		st.altair_chart(chart, use_container_width=True)
+	except Exception as e:
+		# log to console but continue
+		print(f"Error rendering chart: {e}")
+		# print dataframe info
+		print(filtered.info())
+		# placeholder of the same height
+		st.markdown("<div style='height: 335px;'></div>", unsafe_allow_html=True)
 	st.markdown("### Prompt")
 	st.markdown(f"#### {prompt}")
 
