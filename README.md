@@ -33,6 +33,7 @@ Streamlit opens a local browser tab (default: http://localhost:8501). When you e
 ## Loading Traces
 - Click **Upload trace JSONs** in the sidebar to select one or more `.json` files.
 - Each file should contain a top-level `response` key whose `output` is an ordered list of step dictionaries.
+- Optionally, each file can contain a top-level `prompt` key with the original prompt text, and an `answer` key with the expected answer.
 - Expected per-step fields include `sequence`, `type`, `status`, `action_type`, `action_query`, `summary`, `content`, `code`, and `outputs`. Missing fields are handled gracefully and will display as empty.
 - Use the **Load sample trace** button to load `monaco_0005.json` if it resides alongside `visualizer.py`.
 

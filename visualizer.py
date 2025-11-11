@@ -43,32 +43,31 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 			df[col] = ""
 	return df
 
+def handle_loaded_data(data: dict[str, Any]) -> pd.DataFrame:
+	"""Process loaded JSON data into a prepared DataFrame."""
+	response_data = data['response']
+	prompt_data = data.get('prompt', 'Prompt not found.')
+	answer_data = data.get('answer', 'Answer not found.')
+	if isinstance(response_data, dict) and 'output' not in response_data:
+		data_keys = list(response_data.keys())
+		response_data = response_data[data_keys[-1]]
+	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
+	return prepare_dataframe(df), prompt_data, answer_data
+
 
 @st.cache_data(show_spinner=False)
 def load_trace_from_bytes(raw_bytes: bytes) -> pd.DataFrame:
 	"""Load and prepare a trace from in-memory JSON bytes."""
 	buffer = io.BytesIO(raw_bytes)
 	data = json.load(buffer)
-	response_data = data['response']
-	prompt_data = data.get('prompt', 'Prompt not found.')
-	if isinstance(response_data, dict) and 'output' not in response_data:
-		data_keys = list(response_data.keys())
-		response_data = response_data[data_keys[-1]]
-	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
-	return prepare_dataframe(df), prompt_data
+	return handle_loaded_data(data)
 
 @st.cache_data(show_spinner=False)
 def load_trace_from_path(path_str: str) -> pd.DataFrame:
 	"""Load and prepare a trace from a file path."""
 	with open(path_str, "rb") as f:
 		data = json.load(f)
-	response_data = data['response']
-	prompt_data = data.get('prompt', 'Prompt not found.')
-	if isinstance(response_data, dict) and 'output' not in response_data:
-		data_keys = list(response_data.keys())
-		response_data = response_data[data_keys[-1]]
-	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
-	return prepare_dataframe(df), prompt_data
+	return handle_loaded_data(data)
 
 def parse_literal(value: str | float | int | None):
 	if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -136,7 +135,7 @@ def render_step(row) -> None:
 			st.write(c_no_text)
 
 
-def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str, key_prefix: str = "", show_close_button: bool = True) -> None:
+def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str, answer: str, key_prefix: str = "", show_close_button: bool = True) -> None:
 	if show_close_button:
 		close_col, _ = st.columns([1, 5])
 		with close_col:
@@ -227,6 +226,9 @@ def render_trace(df: pd.DataFrame, dataset_key: str, label: str, prompt: str, ke
 
 	st.markdown("### Prompt")
 	st.markdown(f"#### {prompt}")
+
+	st.markdown("### Answer")
+	st.markdown(f"#### {answer}")
 
 	st.markdown("### Trace Details")
 	# Toggle: show all steps or only the last step (default = only last)
@@ -350,23 +352,25 @@ def main() -> None:
 			trace_hash = hashlib.md5(content).hexdigest()
 			trace_id = f"upload-{trace_hash}"
 			if trace_id not in trace_store:
-				df, prompt = load_trace_from_bytes(content)
+				df, prompt, answer = load_trace_from_bytes(content)
 				trace_store[trace_id] = {
 					"name": uploaded.name,
 					"df": df,
 					"prompt": prompt,
+					"answer": answer,
 				}
 		latest_upload_tab_idx = len(trace_store) - 1 - len(uploaded_files) if uploaded_files else st.session_state.get("latest_upload_tab_idx", 0)
 		st.session_state["latest_upload_tab_idx"] = latest_upload_tab_idx
 		if DEFAULT_TRACE_PATH.exists():
 			if st.button("Load sample trace", key="load-sample"):
 				trace_id = f"sample-{DEFAULT_TRACE_PATH.name}"
-				df, prompt = load_trace_from_path(str(DEFAULT_TRACE_PATH))
+				df, prompt, answer = load_trace_from_path(str(DEFAULT_TRACE_PATH))
 				if trace_id not in trace_store:
 					trace_store[trace_id] = {
 						"name": f"Sample · {DEFAULT_TRACE_PATH.name}",
 						"df": df,
 						"prompt": prompt,
+						"answer": answer,
 					}
 				st.rerun()
 
@@ -408,6 +412,7 @@ def main() -> None:
 						left_id,
 						left_entry["name"],
 						left_entry["prompt"],
+						left_entry["answer"],
 						key_prefix="compare-left-",
 						show_close_button=False,
 					)
@@ -418,6 +423,7 @@ def main() -> None:
 						right_id,
 						right_entry["name"],
 						right_entry["prompt"],
+						right_entry["answer"],
 						key_prefix="compare-right-",
 						show_close_button=False,
 					)
@@ -427,7 +433,7 @@ def main() -> None:
 
 	for (trace_id, entry), tab in zip(trace_store.items(), tabs):
 		with tab:
-			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"], key_prefix="tab-")
+			render_trace(entry["df"], trace_id, entry["name"], entry["prompt"], entry["answer"], key_prefix="tab-")
 	# when new files are uploaded, set active tab to latest upload
 	if uploaded_files:
 		st.session_state.active_tab = st.session_state["latest_upload_tab_idx"]
