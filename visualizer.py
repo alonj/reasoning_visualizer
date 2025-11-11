@@ -49,16 +49,26 @@ def load_trace_from_bytes(raw_bytes: bytes) -> pd.DataFrame:
 	"""Load and prepare a trace from in-memory JSON bytes."""
 	buffer = io.BytesIO(raw_bytes)
 	data = json.load(buffer)
-	df = pd.json_normalize(data['response']['output'], meta_prefix='_', record_prefix='_', sep='_')
-	return prepare_dataframe(df), data.get('prompt', 'Prompt not found.')
+	response_data = data['response']
+	prompt_data = data.get('prompt', 'Prompt not found.')
+	if isinstance(response_data, dict) and 'output' not in response_data:
+		data_keys = list(response_data.keys())
+		response_data = response_data[data_keys[-1]]
+	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
+	return prepare_dataframe(df), prompt_data
 
 @st.cache_data(show_spinner=False)
 def load_trace_from_path(path_str: str) -> pd.DataFrame:
 	"""Load and prepare a trace from a file path."""
 	with open(path_str, "rb") as f:
 		data = json.load(f)
-	df = pd.json_normalize(data['response']['output'], meta_prefix='_', record_prefix='_', sep='_')
-	return prepare_dataframe(df), data.get('prompt', 'Prompt not found.')
+	response_data = data['response']
+	prompt_data = data.get('prompt', 'Prompt not found.')
+	if isinstance(response_data, dict) and 'output' not in response_data:
+		data_keys = list(response_data.keys())
+		response_data = response_data[data_keys[-1]]
+	df = pd.json_normalize(response_data['output'], meta_prefix='_', record_prefix='_', sep='_')
+	return prepare_dataframe(df), prompt_data
 
 def parse_literal(value: str | float | int | None):
 	if value is None or (isinstance(value, float) and pd.isna(value)):
